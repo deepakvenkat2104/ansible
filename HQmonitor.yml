@@ -1,0 +1,44 @@
+---
+- hosts: all
+  become: true
+  become_user: root
+  tasks:
+     - name: Stop the HQ agent.
+       shell: sh /home/mwatch/hyperic-hq-agent/bin/hq-agent.sh stop
+     - name: Verify HQ agent stop or not
+       shell: if ps -eaf|grep 'hq'|grep -v grep > /dev/null;then echo 'process_running';else echo 'process_not__running';fi
+       register: hello
+     - debug: msg="{{ hello.stdout }}"
+     - name: Change the user to /opt/mwatch
+       shell: usermod -m -d /opt/mwatch mwatch
+     - name: copy the file to etc
+       ansible.builtin.copy:
+          src: /tmp/agent_2807/mwatch.properties
+          dest: /etc/mwatch.properties
+     - name: change the permission to mwatch
+       shell: chown -R mwatch:mwatch /tmp/agent_2807
+     - name: Login as mwatch and Install the rpm
+       shell: rpm -ivh /tmp/agent_2807/hyperic-hq-agent-5.8.6-20.02.024.x86_64.rpm
+     - name: Verify HQ agent started or not
+       shell: if ps -eaf|grep 'hq'|grep -v grep > /dev/null;then echo 'process_running';else echo 'process_not__running';fi
+       register: hello
+     - debug: msg="{{ hello.stdout }}"
+     - name: Process not running
+       when: hello.stdout == "process_not__running"
+       replace:
+         path: /opt/mwatch/hyperic-hq-agent/conf/agent.properties
+         regexp: 'agent.keystore.path=/home/mwatch/hyperic-hq-agent/conf/agent.keystore'
+         replace: 'agent.keystore.path=/opt/mwatch/hyperic-hq-agent/conf/agent.keystore'
+     - name: Remove the log and data
+       when: hello.stdout == "process_not__running"
+       shell: rm -rf /opt/mwatch/hyperic-hq-agent/data;rm -rf /opt/mwatch/hyperic-hq-agent/log
+     - name: start the HQ agent as mwatch user
+       when: hello.stdout == "process_not__running"
+       become: true
+       become_user: mwatch
+       shell: sh /opt/mwatch/hyperic-hq-agent/bin/hq-agent.sh start
+     - name: Verify HQ agent started or not
+       when: hello.stdout == "process_not__running"
+       shell: if ps -eaf|grep 'hq'|grep -v grep > /dev/null;then echo 'process_running';else echo 'process_not__running';fi
+       register: hello
+     - debug: msg="{{ hello.stdout }}"
